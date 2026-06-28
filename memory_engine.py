@@ -1,37 +1,19 @@
 import cognee
 import asyncio
-import os
 from datetime import datetime
-from dotenv import load_dotenv
 
-load_dotenv()
-
-
-async def setup_cognee():
-    """Initialize Cognee with API keys and local storage."""
-    await cognee.config.set_llm_config({
-        "provider": "openai",
-        "model": "gpt-4o-mini",
-        "api_key": os.getenv("OPENAI_API_KEY")
-    })
-    await cognee.config.set_vector_db_config({
-        "provider": "lancedb",
-        "url": "./memorymirror_db"
-    })
+# No setup_cognee() needed — Cognee reads LLM_PROVIDER, LLM_MODEL, LLM_API_KEY,
+# EMBEDDING_PROVIDER, EMBEDDING_MODEL, EMBEDDING_API_KEY from your .env automatically.
 
 
 async def store_entry(entry_text: str, entry_date: str = None) -> str:
     """
     Store a journal entry in Cognee memory.
-    Cognee will automatically extract entities, emotions, themes,
-    and build graph edges between related concepts.
+    Cognee extracts entities, emotions, themes and builds graph edges automatically.
     """
-    await setup_cognee()
-
     if entry_date is None:
         entry_date = datetime.now().strftime("%Y-%m-%d")
 
-    # Wrap the entry with metadata so Cognee can build richer graph nodes
     enriched_text = f"""
     Journal Entry — {entry_date}
     ---
@@ -41,8 +23,7 @@ async def store_entry(entry_text: str, entry_date: str = None) -> str:
     people mentioned, events, stressors, and goals. Connect this to related past memories.
     """
 
-    await cognee.add(enriched_text, dataset_name="journal_entries")
-    await cognee.cognify()  # This is where Cognee builds the graph connections
+    await cognee.remember(enriched_text)  # Cognee 1.x API: replaces add() + cognify()
 
     return "Entry stored and connected to memory graph."
 
@@ -50,20 +31,13 @@ async def store_entry(entry_text: str, entry_date: str = None) -> str:
 async def retrieve_relevant_memories(query: str, top_k: int = 5) -> list[str]:
     """
     Search Cognee's graph-vector store for memories relevant to the query.
-    Returns a list of relevant past entry snippets.
     """
     try:
-        await setup_cognee()
-
-        results = await cognee.search(
-            query_text=query,
-            query_type="GRAPH_COMPLETION"  # Uses graph traversal, not just vector similarity
-        )
+        results = await cognee.recall(query)  # Cognee 1.x API: replaces search()
 
         if not results:
             return []
 
-        # Extract text from results
         memories = []
         for result in results[:top_k]:
             if hasattr(result, 'text'):
@@ -82,15 +56,11 @@ async def retrieve_relevant_memories(query: str, top_k: int = 5) -> list[str]:
 
 async def get_all_themes() -> list[str]:
     """
-    Ask Cognee to surface recurring themes across all stored memories.
-    Used to show the user patterns over time.
+    Surface recurring themes across all stored memories.
     """
     try:
-        await setup_cognee()
-
-        results = await cognee.search(
-            query_text="What are the recurring themes, emotions, and stressors across all journal entries?",
-            query_type="GRAPH_COMPLETION"
+        results = await cognee.recall(
+            "What are the recurring themes, emotions, and stressors across all journal entries?"
         )
 
         themes = []
@@ -112,18 +82,12 @@ async def get_all_themes() -> list[str]:
 async def get_memory_graph_data() -> dict:
     """
     Extract nodes and edges from Cognee's graph for visualization.
-    Returns data formatted for pyvis network graph.
     """
     try:
-        await setup_cognee()
-
-        # Query for connected concepts to build a visualization
-        results = await cognee.search(
-            query_text="Show all connected themes, emotions, events, and people",
-            query_type="GRAPH_COMPLETION"
+        results = await cognee.recall(
+            "Show all connected themes, emotions, events, and people"
         )
 
-        # Build a simple node-edge structure from results
         nodes = set()
         edges = []
 
@@ -146,7 +110,6 @@ async def get_memory_graph_data() -> dict:
             found_in_this = [k for k in keywords if k in text]
             nodes.update(found_in_this)
 
-            # Connect co-occurring concepts
             for i in range(len(found_in_this)):
                 for j in range(i + 1, len(found_in_this)):
                     edges.append((found_in_this[i], found_in_this[j]))
@@ -157,4 +120,17 @@ async def get_memory_graph_data() -> dict:
         print(f"[MemoryMirror] get_memory_graph_data error: {e}")
         return {"nodes": [], "edges": []}
 
+
+# Synchronous wrappers for Streamlit
+def store_entry_sync(entry_text: str, entry_date: str = None) -> str:
+    return asyncio.run(store_entry(entry_text, entry_date))
+
+def retrieve_memories_sync(query: str) -> list[str]:
+    return asyncio.run(retrieve_relevant_memories(query))
+
+def get_themes_sync() -> list[str]:
+    return asyncio.run(get_all_themes())
+
+def get_graph_data_sync() -> dict:
+    return asyncio.run(get_memory_graph_data())
 
