@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MemoryMirror</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f0f13;
+      color: #e8e8f0;
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #16161e; }
+    ::-webkit-scrollbar-thumb { background: #3a3a5c; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    const s = {
+      layout: { display:'flex', height:'100vh', overflow:'hidden' },
+      sidebar: { width:'260px', minWidth:'260px', background:'#16161e', borderRight:'1px solid #2a2a3a', display:'flex', flexDirection:'column', padding:'24px 16px', gap:'16px', overflowY:'auto' },
+      sidebarTitle: { fontSize:'20px', fontWeight:'700', color:'#c8b8f8' },
+      tagline: { fontSize:'12px', color:'#6a6a8a', fontStyle:'italic', marginTop:'-8px' },
+      divider: { border:'none', borderTop:'1px solid #2a2a3a' },
+      sectionTitle: { fontSize:'12px', fontWeight:'600', color:'#7a7a9a', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:'8px' },
+      btn: { width:'100%', padding:'10px 14px', background:'#5a4af0', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'500', fontSize:'13px', textAlign:'left' },
+      patternBox: { background:'#1e1a30', border:'1px solid #5a4a9a', borderRadius:'10px', padding:'12px', fontSize:'13px', lineHeight:'1.7', color:'#c8b8f8', fontStyle:'italic', marginTop:'10px' },
+      entryCount: { fontSize:'12px', color:'#5a5a7a', marginTop:'auto' },
+      main: { flex:1, display:'flex', flexDirection:'column', overflow:'hidden' },
+      header: { padding:'24px 28px 12px', borderBottom:'1px solid #2a2a3a' },
+      headerTitle: { fontSize:'18px', fontWeight:'600', color:'#a090e8' },
+      headerSub: { fontSize:'12px', color:'#6a6a8a', marginTop:'2px' },
+      chatArea: { flex:1, overflowY:'auto', padding:'20px 28px', display:'flex', flexDirection:'column', gap:'12px' },
+      userMsg: { background:'#1e1e2e', border:'1px solid #2a2a3a', borderRadius:'12px', padding:'12px 16px', marginLeft:'20%' },
+      aiMsg: { background:'#1a1a2e', border:'1px solid #3a3a5c', borderLeft:'3px solid #7c6af7', borderRadius:'12px', padding:'12px 16px', marginRight:'10%', color:'#d0d0e8' },
+      inputArea: { padding:'16px 28px', borderTop:'1px solid #2a2a3a', display:'flex', gap:'10px', alignItems:'flex-end' },
+      textarea: { flex:1, background:'#1e1e2e', color:'#e8e8f0', border:'1px solid #3a3a5c', borderRadius:'10px', padding:'12px', fontSize:'14px', resize:'none', fontFamily:'inherit', lineHeight:'1.6', outline:'none' },
+      sendBtn: { padding:'12px 20px', background:'#5a4af0', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'600', fontSize:'14px', whiteSpace:'nowrap' },
+      statusText: { fontSize:'12px', color:'#7c6af7' },
+      nodeChip: { display:'inline-block', background:'#2a2040', color:'#9b87f5', fontSize:'12px', padding:'3px 10px', borderRadius:'20px', margin:'3px' },
+      graphBox: { background:'#16161e', border:'1px solid #2a2a3a', borderRadius:'10px', padding:'16px', minHeight:'80px', marginTop:'8px' },
+    };
+
+    function App() {
+      const [messages, setMessages] = useState([]);
+      const [chatHistory, setChatHistory] = useState([]);
+      const [input, setInput] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [status, setStatus] = useState('');
+      const [entryCount, setEntryCount] = useState(0);
+      const [patternAnalysis, setPatternAnalysis] = useState('');
+      const [graphData, setGraphData] = useState(null);
+      const [showGraph, setShowGraph] = useState(false);
+      const bottomRef = useRef(null);
+
+      useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, status]);
+
+      const sendMessage = async () => {
+        const text = input.trim();
+        if (!text || loading) return;
+        setInput('');
+        setMessages(prev => [...prev, { role: 'user', content: text }]);
+        setLoading(true);
+        setStatus('Saving to memory graph...');
+        try {
+          const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, chat_history: chatHistory }),
+          });
+          const data = await res.json();
+          setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+          setChatHistory(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: data.response }]);
+          setEntryCount(prev => prev + 1);
+        } catch (e) {
+          setMessages(prev => [...prev, { role: 'assistant', content: 'Something went wrong. Is the backend running?' }]);
+        } finally {
+          setLoading(false);
+          setStatus('');
+        }
+      };
+
+      const analyzePatterns = async () => {
+        setStatus('Scanning memory graph...');
+        try {
+          const res = await fetch('/patterns');
+          const data = await res.json();
+          setPatternAnalysis(data.analysis);
+        } catch (e) {
+          setPatternAnalysis('Could not fetch patterns.');
+        } finally { setStatus(''); }
+      };
+
+      const loadGraph = async () => {
+        setStatus('Building memory graph...');
+        try {
+          const res = await fetch('/graph');
+          const data = await res.json();
+          setGraphData(data);
+          setShowGraph(true);
+        } catch (e) { } finally { setStatus(''); }
+      };
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+      };
+
+      return (
+        <div style={s.layout}>
+          <div style={s.sidebar}>
+            <div style={s.sidebarTitle}>🪞 MemoryMirror</div>
+            <div style={s.tagline}>It connects the dots between your days, so you can finally see the pattern.</div>
+            <hr style={s.divider} />
+            <div>
+              <div style={s.sectionTitle}>How it works</div>
+              <div style={{ fontSize:'12px', color:'#8a8aaa', lineHeight:'1.8' }}>
+                1. Write what's on your mind<br/>
+                2. Cognee stores it as a graph node<br/>
+                3. MemoryMirror surfaces patterns<br/>
+                4. You see yourself more clearly
+              </div>
+            </div>
+            <hr style={s.divider} />
+            <div>
+              <div style={s.sectionTitle}>Your patterns</div>
+              <button style={s.btn} onClick={analyzePatterns}>✦ Analyze my patterns</button>
+              {patternAnalysis && <div style={s.patternBox}>{patternAnalysis}</div>}
+            </div>
+            <hr style={s.divider} />
+            <div>
+              <div style={s.sectionTitle}>Memory graph</div>
+              <button style={s.btn} onClick={loadGraph}>⬡ Show memory graph</button>
+              {showGraph && graphData && (
+                <div style={s.graphBox}>
+                  {graphData.nodes.length === 0
+                    ? <span style={{ color:'#5a5a7a', fontSize:'13px' }}>No graph data yet.</span>
+                    : graphData.nodes.map(n => <span key={n} style={s.nodeChip}>{n}</span>)
+                  }
+                  <div><button onClick={() => setShowGraph(false)} style={{ ...s.btn, marginTop:'8px', background:'#2a2a3a', fontSize:'11px', padding:'4px 8px', width:'auto' }}>✕ Close</button></div>
+                </div>
+              )}
+            </div>
+            <div style={s.entryCount}>
+              Entries in memory: {entryCount}<br/>
+              <span style={{ color:'#3a3a5a' }}>Powered by Cognee + Gemini</span>
+            </div>
+          </div>
+
+          <div style={s.main}>
+            <div style={s.header}>
+              <div style={s.headerTitle}>What's on your mind?</div>
+              <div style={s.headerSub}>Write freely. MemoryMirror remembers everything — and connects what matters.</div>
+            </div>
+            <div style={s.chatArea}>
+              {messages.map((msg, i) => (
+                <div key={i} style={msg.role === 'user' ? s.userMsg : s.aiMsg}>
+                  {msg.role === 'user' ? '🧑 ' : '🪞 '}{msg.content}
+                </div>
+              ))}
+              {status && <div style={s.statusText}>⟳ {status}</div>}
+              <div ref={bottomRef} />
+            </div>
+            <div style={s.inputArea}>
+              <textarea
+                style={s.textarea}
+                rows={3}
+                placeholder="Write anything — what happened today, how you're feeling, what's worrying you..."
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+              <button style={s.sendBtn} onClick={sendMessage} disabled={loading}>
+                {loading ? '...' : 'Send →'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
